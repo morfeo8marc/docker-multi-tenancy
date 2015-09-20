@@ -1,9 +1,14 @@
 package main
 
 import (
-	"log"
 	"net/http"
 	"regexp"
+"encoding/json"
+	"bytes"
+	"bufio"
+	"io/ioutil"
+	"encoding/binary"
+	"log"
 )
 
 // APIImages represent an image returned in the ListImages call.
@@ -23,17 +28,46 @@ type imageTransformer struct{}
 func NewImageListTransformer() *Transformer {
 	t := &Transformer{}
 
-	t.regexp = regexp.MustCompile("/v.*/images/json")
+	t.Regexp = regexp.MustCompile("/v.*/images/json")
 
-	t.transformer = &imageTransformer{}
+	t.MultiTenancyTransformer = &imageTransformer{}
 
 	return t
 }
 
 func (c *imageTransformer) transformRequest(r *http.Request) {
-	log.Println("Modifiy somehow the request")
+	log.Println("NewImageListTransformer.transformRequest")
 }
 
 func (c *imageTransformer) transformResponse(r *http.Response) {
-	log.Println("Modifiy somehow the resopnse")
+
+	var images []APIImages
+
+	if err := json.NewDecoder(r.Body).Decode(&images); err != nil {
+		return
+	}
+
+	for _, im :=  range images{
+
+		if im.Labels == nil {
+			im.Labels = make(map[string]string)
+		}
+
+		im.Labels["hola"] = "world"
+	}
+
+
+	var b bytes.Buffer
+	w := bufio.NewWriter(&b)
+
+	// Now take the struct and encode it
+	if err := json.NewEncoder(w).Encode(&images); err != nil {
+		return
+	}
+
+	// Restore the io.ReadCloser to its original state
+	r.Body = ioutil.NopCloser(bytes.NewBuffer(b.Bytes()))
+
+	// Set size of modified body
+	r.ContentLength = int64(binary.Size(b))
 }

@@ -11,30 +11,26 @@ type MultiTenancyTransformer interface {
 }
 
 type Transformer struct {
-	regexp      *regexp.Regexp
-	transformer MultiTenancyTransformer
+	Regexp      *regexp.Regexp
+	            MultiTenancyTransformer
 }
 
-type Transformers struct {
-	transformers []*Transformer
+func (t *Transformer) String() string {
+	return "Transformer Regexp" + t.Regexp.String()
 }
 
-var DockerTransformers *Transformers
+var DockerTransformers []*Transformer
 
 func init() {
-
 	DockerTransformers = NewDefaultTransformers()
-
 }
 
-func NewDefaultTransformers() *Transformers {
-	ts := &Transformers{}
+func NewDefaultTransformers() []*Transformer {
+	ts := make([]*Transformer, 0)
 
-	ts.AddTransformer(NewImageListTransformer())
+	ts = append(ts, NewImageListTransformer())
+	ts = append(ts, NewContainerListTransformer())
 
 	return ts
 }
 
-func (ts *Transformers) AddTransformer(t *Transformer) {
-	ts.transformers = append(ts.transformers, t)
-}

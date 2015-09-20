@@ -3,42 +3,57 @@ package main
 import (
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
-	"net/http/httputil"
 	"net/url"
 	"strings"
+    "errors"
+)
+
+const userAgent = "docker-multi-tenancy"
+
+var (
+// ErrInvalidEndpoint is returned when the endpoint is not a valid HTTP URL.
+	ErrInvalidEndpoint = errors.New("invalid endpoint")
+
+	ErrConnectionRefused = errors.New("Connection refused")
 )
 
 type Client struct {
 	endpoint       string
 	endpointURL    *url.URL
-	unixHTTPClient *http.Client
+	httpClient     *http.Client
 	dialer         func(string, string) (net.Conn, error)
 }
 
 // NewVersionedClient returns a Client instance ready for communication with
 // the given server endpoint
 func NewClient(endpoint string) (*Client, error) {
+	var httpClient *http.Client
+	var dialFunc func(network, addr string) (net.Conn, error)
+
 	u, err := url.Parse(endpoint)
 
 	if err != nil {
 		return nil, ErrInvalidEndpoint
 	}
 
-	d := net.Dialer{}
-	dialFunc := func(network, addr string) (net.Conn, error) {
-		return d.Dial("unix", u.Path)
-	}
-	unixHTTPClient := &http.Client{
-		Transport: &http.Transport{
-			Dial: dialFunc,
-		},
+	if u.Scheme == "unix" {
+		d := net.Dialer{}
+		dialFunc = func(network, addr string) (net.Conn, error) {
+			return d.Dial("unix", u.Path)
+		}
+		httpClient = &http.Client{
+			Transport: &http.Transport{
+				Dial: dialFunc,
+			},
+		}
+	}else{
+		httpClient = http.DefaultClient
 	}
 
 	return &Client{
-		unixHTTPClient: unixHTTPClient,
+		httpClient:     httpClient,
 		endpoint:       endpoint,
 		endpointURL:    u,
 		dialer:         dialFunc,
@@ -63,7 +78,7 @@ func (c *Client) getFakeUnixURL(path string) string {
 func (c *Client) do(method, path string, body io.Reader) (*http.Response, error) {
 	var u string
 
-	httpClient := c.unixHTTPClient
+	httpClient := c.httpClient
 	u = c.getFakeUnixURL(path)
 
 	req, err := http.NewRequest(method, u, body)
@@ -78,12 +93,6 @@ func (c *Client) do(method, path string, body io.Reader) (*http.Response, error)
 
 	resp, err := httpClient.Do(req)
 
-	if logResponse {
-		if respBytes, err := httputil.DumpResponse(resp, true); err == nil {
-			log.Printf("Response:\n%v\n", string(respBytes))
-		}
-
-	}
 	if err != nil {
 		if strings.Contains(err.Error(), "connection refused") {
 			return nil, ErrConnectionRefused
